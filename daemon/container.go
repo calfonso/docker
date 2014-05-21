@@ -540,6 +540,25 @@ func (container *Container) KillSig(sig int) error {
 	return container.daemon.Kill(container, sig)
 }
 
+func (container *Container) Pause() error {
+	if !container.State.IsRunning() {
+		return nil
+	}
+
+	if pid := container.State.Pid; pid != 0 {
+                dirname := "/sys/fs/cgroup/freezer/docker-" + container.ID
+                os.Mkdir(dirname, 0700)
+                file, _ := os.Create(dirname + "/" + "tasks")
+                file.WriteString(fmt.Sprintf("%d", pid))
+                file.Close()
+                file, _ = os.OpenFile(dirname + "/" + "freezer.state", syscall.O_WRONLY, 0600)
+                file.WriteString("FROZEN")
+                file.Close()
+        }
+
+	return nil
+}
+
 func (container *Container) Kill() error {
 	if !container.State.IsRunning() {
 		return nil
