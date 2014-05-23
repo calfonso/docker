@@ -548,7 +548,7 @@ func (container *Container) Pause() error {
 	if pid := container.State.Pid; pid != 0 {
                 dirname := "/sys/fs/cgroup/freezer/docker-" + container.ID
                 os.Mkdir(dirname, 0700)
-                file, _ := os.Create(dirname + "/" + "tasks")
+                file, _ := os.Create(dirname + "/" + "cgroup.procs")
                 file.WriteString(fmt.Sprintf("%d", pid))
                 file.Close()
                 file, _ = os.OpenFile(dirname + "/" + "freezer.state", syscall.O_WRONLY, 0600)
@@ -559,6 +559,16 @@ func (container *Container) Pause() error {
 	return nil
 }
 
+func (container *Container) Unpause() error {
+	if pid := container.State.Pid; pid != 0 {
+                dirname := "/sys/fs/cgroup/freezer/docker-" + container.ID
+                file, _ := os.OpenFile(dirname + "/" + "freezer.state", syscall.O_WRONLY, 0600)
+                file.WriteString("THAWED")
+                file.Close()
+        }
+
+	return nil
+}
 func (container *Container) Kill() error {
 	if !container.State.IsRunning() {
 		return nil

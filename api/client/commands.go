@@ -648,8 +648,47 @@ func (cli *DockerCli) CmdStart(args ...string) error {
 	return nil
 }
 
+func (cli *DockerCli) CmdUnpause(args ...string) error {
+        cmd := cli.Subcmd("unpause", "CONTAINER", "Unpause all processes within a container")
+        if err := cmd.Parse(args); err != nil {
+		return nil
+	}
+
+	if cmd.NArg() != 1 {
+		cmd.Usage()
+		return nil
+	}
+
+	name := cmd.Arg(0)
+	body, _, err := readBody(cli.call("GET", "/containers/"+name+"/json", nil, false))
+	if err != nil {
+		return err
+	}
+
+	container := &api.Container{}
+	err = json.Unmarshal(body, container)
+	if err != nil {
+		return err
+	}
+
+	if container.State.Running {
+		return fmt.Errorf("You cannot unpause and unpaused a stopped container")
+	}
+
+	var encounteredError error
+	for _, name := range cmd.Args() {
+		if _, _, err := readBody(cli.call("POST", fmt.Sprintf("/containers/%s/unpause", name), nil, false)); err != nil {
+			fmt.Fprintf(cli.err, "%s\n", err)
+			encounteredError = fmt.Errorf("Error: failed to unpause container named %s", name)
+		} else {
+			fmt.Fprintf(cli.out, "%s\n", name)
+		}
+	}
+	return encounteredError
+}
+
 func (cli *DockerCli) CmdPause(args ...string) error {
-        cmd := cli.Subcmd("pause", "CONTAINER [CONTAINER]", "Pause all processes within a container")
+        cmd := cli.Subcmd("pause", "CONTAINER", "Pause all processes within a container")
         if err := cmd.Parse(args); err != nil {
 		return nil
 	}
