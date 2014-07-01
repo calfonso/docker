@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	defaultCaFile   = "ca.pem"
-	defaultKeyFile  = "key.pem"
-	defaultCertFile = "cert.pem"
+	defaultCaFile    = "ca.pem"
+	defaultKeyFile   = "key.pem"
+	defaultCertFile  = "cert.pem"
+	nsinitBinaryName = "nsinit"
 )
 
 func main() {
