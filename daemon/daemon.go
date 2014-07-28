@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"path"
-	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -42,13 +41,14 @@ import (
 
 // Set the max depth to the aufs default that most
 // kernels are compiled with
-// For more information see: http://sourceforge.net/p/aufs/aufs3-standalone/ci/aufs3.12/tree/config.mk
+// For more information see: http://sourceforge.net/p/aufs/aufs3-standalone/ci/aufs3.12/tree/config.
 const MaxImageDepth = 127
 
 var (
 	DefaultDns                = []string{"8.8.8.8", "8.8.4.4"}
 	validContainerNameChars   = `[a-zA-Z0-9_.-]`
 	validContainerNamePattern = regexp.MustCompile(`^/?` + validContainerNameChars + `+$`)
+	VishLog *log.Logger
 )
 
 type contStore struct {
@@ -128,6 +128,7 @@ func (daemon *Daemon) Install(eng *engine.Engine) error {
 		"top":               daemon.ContainerTop,
 		"unpause":           daemon.ContainerUnpause,
 		"wait":              daemon.ContainerWait,
+		"runin":             daemon.ContainerRunIn,
 	} {
 		if err := eng.Register(name, method); err != nil {
 			return err
@@ -316,7 +317,6 @@ func (daemon *Daemon) restore() error {
 			utils.Errorf("Failed to load container %v: %v", id, err)
 			continue
 		}
-
 		// Ignore the container if it does not support the current driver being used by the graph
 		if container.Driver == "" && currentDriver == "aufs" || container.Driver == currentDriver {
 			utils.Debugf("Loaded container %v", container.ID)
@@ -673,6 +673,12 @@ func copyBinary(src, dst string) error {
 
 // FIXME: harmonize with NewGraph()
 func NewDaemon(config *daemonconfig.Config, eng *engine.Engine) (*Daemon, error) {
+	file, err := os.OpenFile("/tmp/vish_log.txt", os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		log.Fatalln("Failed to open log file", "/tmp/vish_log.txt", ":", err)
+	}
+	VishLog = log.New(file, "vish: ", log.Lshortfile)
+	VishLog.Println("Logging starting")
 	daemon, err := NewDaemonFromDirectory(config, eng)
 	if err != nil {
 		return nil, err
@@ -800,13 +806,6 @@ func NewDaemonFromDirectory(config *daemonconfig.Config, eng *engine.Engine) (*D
 			return nil, err
 		}
 		sysInitPath = localCopy
-	}
-
-	nsinitPath := filepath.Join(filepath.Dir(sysInitPath), "nsinit")
-
-	// Create nsinit for use by the native exec driver.
-	if err := copyBinary(sysInitPath, nsinitPath); err != nil {
-		return nil, err
 	}
 
 	sysInfo := sysinfo.New(false)
@@ -953,10 +952,6 @@ func (daemon *Daemon) Diff(container *Container) (archive.Archive, error) {
 
 func (daemon *Daemon) Run(c *Container, pipes *execdriver.Pipes, startCallback execdriver.StartCallback) (int, error) {
 	return daemon.execDriver.Run(c.command, pipes, startCallback)
-}
-
-func (daemon *Daemon) RunIn(c *Container, runInConfig *RunInConfig, pipes *execdriver.Pipes, startCallback execdriver.StartCallback) (int, error) {
-	return daemon.execDriver.RunIn(c.command, runInConfig.ProcessConfig, pipes, startCallback)
 }
 
 func (daemon *Daemon) Pause(c *Container) error {
@@ -1107,46 +1102,4 @@ func checkKernelAndArch() error {
 			}
 		}
 	}
-
-func (daemon *Daemon) RunInContainer(config *runconfig.RunInConfig, name string) error {
-	container := daemon.Get(name)
-	if container == nil {
-		return fmt.Errorf("No such container: %s", name)
-	}
-
-	if container.State.IsRunning() {
-		return fmt.Errorf("Container already started")
-	}
-
-	entrypoint, args := daemon.getEntrypointAndArgs(config.Entrypoint, config.Cmd)
-	// TODO(vishh): Fill up run in config.
-
-	processConfig := &execdriver.ProcessConfig{
-		Privileged: config.Privileged,
-		User:       config.User,
-		Tty:        config.Tty,
-		Entrypoint: entrypoint,
-		Arguments:  args,
-	}
-	processConfig.Env = config.Env
-	runInConfig := &RunInConfig{
-		OpenStdin:     config.OpenStdin,
-		StdConfig:     &StdConfig{},
-		ProcessConfig: processConfig,
-	}
-
-	runInConfig.StdConfig.stderr = broadcastwriter.New()
-	runInConfig.StdConfig.stdout = broadcastwriter.New()
-	// Attach to stdin
-	if runInConfig.OpenStdin {
-		runInConfig.StdConfig.stdin, runInConfig.StdConfig.stdinPipe = io.Pipe()
-	} else {
-		runInConfig.StdConfig.stdinPipe = utils.NopWriteCloser(ioutil.Discard) // Silently drop stdin
-	}
-
-	if err := container.RunIn(runInConfig); err != nil {
-		return fmt.Errorf("Cannot run in container %s: %s", name, err)
-	}
-
-	return nil
 }

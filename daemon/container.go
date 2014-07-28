@@ -42,8 +42,8 @@ var (
 )
 
 type RunInConfig struct {
-	ProcessConfig *execdriver.ProcessConfig
-	StdConfig     *StdConfig
+	ProcessConfig execdriver.ProcessConfig
+	StdConfig     StdConfig
 	OpenStdin     bool
 }
 
@@ -80,7 +80,7 @@ type Container struct {
 	ExecDriver     string
 
 	command   *execdriver.Command
-	StdConfig *StdConfig
+	StdConfig StdConfig
 
 	daemon                   *Daemon
 	MountLabel, ProcessLabel string
@@ -333,7 +333,7 @@ func (container *Container) Run() error {
 }
 
 func (container *Container) Output() (output []byte, err error) {
-	pipe, err := container.StdoutPipe()
+	pipe, err := container.StdConfig.StdoutPipe()
 	if err != nil {
 		return nil, err
 	}
@@ -354,19 +354,19 @@ func (container *Container) Output() (output []byte, err error) {
 // copied and delivered to all StdoutPipe and StderrPipe consumers, using
 // a kind of "broadcaster".
 
-func (container *Container) StdinPipe() (io.WriteCloser, error) {
-	return container.StdConfig.stdinPipe, nil
+func (stdConfig *StdConfig) StdinPipe() (io.WriteCloser, error) {
+	return stdConfig.stdinPipe, nil
 }
 
-func (container *Container) StdoutPipe() (io.ReadCloser, error) {
+func (stdConfig *StdConfig) StdoutPipe() (io.ReadCloser, error) {
 	reader, writer := io.Pipe()
-	container.StdConfig.stdout.AddWriter(writer, "")
+	stdConfig.stdout.AddWriter(writer, "")
 	return utils.NewBufReader(reader), nil
 }
 
-func (container *Container) StderrPipe() (io.ReadCloser, error) {
+func (stdConfig *StdConfig) StderrPipe() (io.ReadCloser, error) {
 	reader, writer := io.Pipe()
-	container.StdConfig.stderr.AddWriter(writer, "")
+	stdConfig.stderr.AddWriter(writer, "")
 	return utils.NewBufReader(reader), nil
 }
 
@@ -1246,7 +1246,7 @@ func (container *Container) RunIn(runInConfig *RunInConfig) error {
 	// syncronization purposes
 	cErr := utils.Go(func() error { return container.monitorRunIn(runInConfig, callback) })
 
-	// Start should not return until the process is actually running
+	// RunIn should not return until the process is actually running
 	select {
 	case <-waitStart:
 	case err := <-cErr:
@@ -1269,9 +1269,9 @@ func (container *Container) monitorRunIn(runInConfig *RunInConfig, callback exec
 	}
 	utils.Debugf("Task exited with code: %v", exitCode)
 	// Re-create a brand new stdin pipe once the container exited
-	if runInConfig.OpenStdin {
+/*	if runInConfig.OpenStdin {
 		runInConfig.StdConfig.stdin, runInConfig.StdConfig.stdinPipe = io.Pipe()
 	}
-
+*/
 	return err
 }

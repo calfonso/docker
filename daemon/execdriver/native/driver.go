@@ -10,12 +10,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 
 	"github.com/docker/docker/daemon/execdriver"
 	"github.com/docker/docker/pkg/term"
+	"github.com/docker/docker/utils"
 	"github.com/docker/libcontainer"
 	"github.com/docker/libcontainer/apparmor"
 	"github.com/docker/libcontainer/cgroups/fs"
@@ -34,6 +36,14 @@ const (
 func init() {
 	execdriver.RegisterInitFunc(DriverName, func(args *execdriver.InitArgs) error {
 		var container *libcontainer.Config
+		if args.Args[0] == "nsenter" {			
+			if err := json.Unmarshal([]byte(args.ContainerJson), &container); err != nil {
+				return fmt.Errorf("failed to unmarshall -containerjson: %s - %s", args.ContainerJson, err)
+			}
+
+			return namespaces.NsEnter(container, args.Args[2:])
+		}
+
 		f, err := os.Open(filepath.Join(args.Root, "container.json"))
 		if err != nil {
 			return err
@@ -71,7 +81,6 @@ type activeContainer struct {
 type driver struct {
 	root             string
 	initPath         string
-	nsinitPath       string
 	activeContainers map[string]*activeContainer
 	sync.Mutex
 }
@@ -85,16 +94,9 @@ func NewDriver(root, initPath string) (*driver, error) {
 	if err := apparmor.InstallDefaultProfile(); err != nil {
 		return nil, err
 	}
-	nsinitPath := filepath.Join(filepath.Dir(initPath), "nsinit")
-
-	if _, err := os.Stat(nsinitPath); err != nil {
-		return nil, fmt.Errorf("Failed to stat %s. Error: %s", nsinitPath, err)
-	}
-
 	return &driver{
 		root:             root,
 		initPath:         initPath,
-		nsinitPath:       nsinitPath,
 		activeContainers: make(map[string]*activeContainer),
 	}, nil
 }
@@ -369,10 +371,37 @@ func (d *driver) RunIn(c *execdriver.Command, processConfig *execdriver.ProcessC
 
 	args := append([]string{processConfig.Entrypoint}, processConfig.Arguments...)
 
-	return namespaces.RunIn(active.container, state, args, d.nsinitPath, processConfig.Stdin, processConfig.Stdout, processConfig.Stderr, processConfig.Console, 
-		func(cmd *exec.Cmd) {
-			if startCallback != nil {
-				startCallback(processConfig)
-			}
-		})
+	processConfig.Path = d.initPath
+
+	nsenterCmd, err := namespaces.GetNsEnterCommand(strconv.Itoa(state.InitPid), active.container, processConfig.Console, args)
+	if err != nil {
+		return -1, fmt.Errorf("failed to get nsenter command - %s", err)
+	}
+	
+	processConfig.Args = append([]string{
+		c.InitPath,
+		"--driver", DriverName }, nsenterCmd...) 
+
+	processConfig.Dir = "/"
+
+/*
+	processConfig.Stdout = os.Stdout
+	processConfig.Stderr = os.Stderr
+	processConfig.Stdin = os.Stdin
+*/
+	utils.Debugf("About to run process %+v", processConfig)
+	if err := processConfig.Start(); err != nil {
+		return -1, err
+	}
+	if startCallback != nil {
+		startCallback(processConfig)
+	}
+
+	if err := processConfig.Wait(); err != nil {
+		if _, ok := err.(*exec.ExitError); !ok {
+			return -1, err
+		}
+	}
+
+	return processConfig.ProcessState.Sys().(syscall.WaitStatus).ExitStatus(), nil
 }

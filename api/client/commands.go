@@ -80,6 +80,7 @@ func (cli *DockerCli) CmdHelp(args ...string) error {
 		{"rm", "Remove one or more containers"},
 		{"rmi", "Remove one or more images"},
 		{"run", "Run a command in a new container"},
+		{"runin", "Run a command in an existing container"},
 		{"save", "Save an image to a tar archive"},
 		{"search", "Search for an image on the Docker Hub"},
 		{"start", "Start a stopped container"},
@@ -664,7 +665,7 @@ func (cli *DockerCli) CmdStart(args ...string) error {
 		v.Set("stderr", "1")
 
 		cErr = utils.Go(func() error {
-			return cli.hijack("POST", "/containers/"+cmd.Arg(0)+"/attach?"+v.Encode(), tty, in, cli.out, cli.err, nil)
+			return cli.hijack("POST", "/containers/"+cmd.Arg(0)+"/attach?"+v.Encode(), tty, in, cli.out, cli.err, nil, nil)
 		})
 	}
 
@@ -1835,7 +1836,7 @@ func (cli *DockerCli) CmdAttach(args ...string) error {
 		defer signal.StopCatch(sigc)
 	}
 
-	if err := cli.hijack("POST", "/containers/"+cmd.Arg(0)+"/attach?"+v.Encode(), tty, in, cli.out, cli.err, nil); err != nil {
+	if err := cli.hijack("POST", "/containers/"+cmd.Arg(0)+"/attach?"+v.Encode(), tty, in, cli.out, cli.err, nil, nil); err != nil {
 		return err
 	}
 
@@ -1970,6 +1971,108 @@ func (cli *DockerCli) pullImage(image string) error {
 	if err = cli.stream("POST", "/images/create?"+v.Encode(), nil, cli.err, map[string][]string{"X-Registry-Auth": registryAuthHeader}); err != nil {
 		return err
 	}
+	return nil
+}
+func (cli *DockerCli) CmdRunin(args ...string) error {
+	cmd := cli.Subcmd("runin", "[OPTIONS] CONTAINER COMMAND [ARG...]", "Run a command in an existing container")
+
+	runInConfig, err := runconfig.ParseRunIn(cmd, args)
+	if err != nil {
+		return err
+	}
+	if runInConfig.Container == "" {
+		cmd.Usage()
+		return nil
+	}
+
+	if runInConfig.Detach {
+		_, _, err := cli.call("POST", "/containers/"+runInConfig.Container+"/runin", runInConfig, false)
+		return err
+	}
+	var (
+		out, stderr io.Writer
+		in          io.ReadCloser
+		urlValues   = url.Values{}
+		// We need to instanciate the chan because the select needs it. It can
+		// be closed but can't be uninitialized.
+		hijacked = make(chan io.Closer)
+		errCh chan error
+	)
+	// Block the return until the chan gets closed
+	defer func() {
+		utils.Debugf("End of CmdRunIn(), Waiting for hijack to finish.")
+		if _, ok := <-hijacked; ok {
+			utils.Errorf("Hijack did not finish (chan still open)")
+		}
+	}()
+
+	if runInConfig.AttachStdin {
+		in = cli.in
+	}
+	if runInConfig.AttachStdout {
+		out = cli.out
+	}
+	if runInConfig.AttachStderr {
+		if runInConfig.Tty {
+			stderr = cli.out
+		} else {
+			stderr = cli.err
+		}
+	}
+	errCh = utils.Go(func() error {
+		return cli.hijack("POST", "/containers/"+runInConfig.Container+"/runin?"+urlValues.Encode(), runInConfig.Tty, in, out, stderr, hijacked, runInConfig)
+	})
+
+	fmt.Fprintf(cli.out, "1\n")
+	// Acknowledge the hijack before starting
+	select {
+	case closer := <-hijacked:
+		// Make sure that hijack gets closed when returning. (result
+		// in closing hijack chan and freeing server's goroutines.
+		if closer != nil {
+			defer closer.Close()
+		}
+/*	case err := <-errCh:
+		if err != nil {
+			utils.Debugf("Error hijack: %s", err)
+			return err
+		} */
+	}
+	fmt.Fprintf(cli.out, "2\n")
+	if runInConfig.Tty && cli.isTerminal {
+		if err := cli.monitorTtySize(runInConfig.Container); err != nil {
+			utils.Errorf("Error monitoring TTY size: %s\n", err)
+		}
+	}
+	fmt.Fprintf(cli.out, "3\n")
+	if errCh != nil {
+		if err := <-errCh; err != nil {
+			utils.Debugf("Error hijack: %s", err)
+			return err
+		}
+	}
+	fmt.Fprintf(cli.out, "4\n")
+	var status int
+	if !runInConfig.Tty {
+		fmt.Fprintf(cli.out, "about to wait for exit code - no tty\n")
+		// In non-tty mode, we can't dettach, so we know we need to wait.
+		if status, err = waitForExit(cli, runInConfig.Container); err != nil {
+			return err
+		}
+	} else {
+		// In TTY mode, there is a race. If the process dies too slowly, the state can be update after the getExitCode call
+		// and result in a wrong exit code.1
+		// No Autoremove: Simply retrieve the exit code
+		fmt.Fprintf(cli.out, "about to wait for exit code - tty\n")
+		if _, status, err = getExitCode(cli, runInConfig.Container); err != nil {
+			return err
+		}
+	}
+	fmt.Fprintf(cli.out, "6\n")
+	if status != 0 {
+		return &utils.StatusError{StatusCode: status}
+	}
+	
 	return nil
 }
 
@@ -2117,7 +2220,7 @@ func (cli *DockerCli) CmdRun(args ...string) error {
 		}
 
 		errCh = utils.Go(func() error {
-			return cli.hijack("POST", "/containers/"+runResult.Get("Id")+"/attach?"+v.Encode(), config.Tty, in, out, stderr, hijacked)
+			return cli.hijack("POST", "/containers/"+runResult.Get("Id")+"/attach?"+v.Encode(), config.Tty, in, out, stderr, hijacked, nil)
 		})
 	} else {
 		close(hijacked)
