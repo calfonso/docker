@@ -17,7 +17,6 @@ import (
 
 	"github.com/docker/docker/daemon/execdriver"
 	"github.com/docker/docker/pkg/term"
-	"github.com/docker/docker/utils"
 	"github.com/docker/libcontainer"
 	"github.com/docker/libcontainer/apparmor"
 	"github.com/docker/libcontainer/cgroups/fs"
@@ -36,7 +35,7 @@ const (
 func init() {
 	execdriver.RegisterInitFunc(DriverName, func(args *execdriver.InitArgs) error {
 		var container *libcontainer.Config
-		if args.Args[0] == "nsenter" {			
+		if args.Args[0] == "nsenter" {
 			if err := json.Unmarshal([]byte(args.ContainerJson), &container); err != nil {
 				return fmt.Errorf("failed to unmarshall -containerjson: %s - %s", args.ContainerJson, err)
 			}
@@ -153,10 +152,10 @@ func (d *driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallba
 		}, args...)
 
 		// set this to nil so that when we set the clone flags anything else is reset
-		c.SysProcAttr = &syscall.SysProcAttr{
+		c.ProcessConfig.SysProcAttr = &syscall.SysProcAttr{
 			Cloneflags: uintptr(namespaces.GetNamespaceFlags(container.Namespaces)),
 		}
-		c.ExtraFiles = []*os.File{child}
+		c.ProcessConfig.ExtraFiles = []*os.File{child}
 
 		c.ProcessConfig.Env = container.Env
 		c.ProcessConfig.Dir = c.Rootfs
@@ -377,19 +376,13 @@ func (d *driver) RunIn(c *execdriver.Command, processConfig *execdriver.ProcessC
 	if err != nil {
 		return -1, fmt.Errorf("failed to get nsenter command - %s", err)
 	}
-	
+
 	processConfig.Args = append([]string{
 		c.InitPath,
-		"--driver", DriverName }, nsenterCmd...) 
+		"--driver", DriverName}, nsenterCmd...)
 
 	processConfig.Dir = "/"
 
-/*
-	processConfig.Stdout = os.Stdout
-	processConfig.Stderr = os.Stderr
-	processConfig.Stdin = os.Stdin
-*/
-	utils.Debugf("About to run process %+v", processConfig)
 	if err := processConfig.Start(); err != nil {
 		return -1, err
 	}

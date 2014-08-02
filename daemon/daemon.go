@@ -48,7 +48,6 @@ var (
 	DefaultDns                = []string{"8.8.8.8", "8.8.4.4"}
 	validContainerNameChars   = `[a-zA-Z0-9_.-]`
 	validContainerNamePattern = regexp.MustCompile(`^/?` + validContainerNameChars + `+$`)
-	VishLog *log.Logger
 )
 
 type contStore struct {
@@ -673,12 +672,6 @@ func copyBinary(src, dst string) error {
 
 // FIXME: harmonize with NewGraph()
 func NewDaemon(config *daemonconfig.Config, eng *engine.Engine) (*Daemon, error) {
-	file, err := os.OpenFile("/tmp/vish_log.txt", os.O_CREATE|os.O_WRONLY, 0666)
-	if err != nil {
-		log.Fatalln("Failed to open log file", "/tmp/vish_log.txt", ":", err)
-	}
-	VishLog = log.New(file, "vish: ", log.Lshortfile)
-	VishLog.Println("Logging starting")
 	daemon, err := NewDaemonFromDirectory(config, eng)
 	if err != nil {
 		return nil, err
@@ -1102,4 +1095,5 @@ func checkKernelAndArch() error {
 			}
 		}
 	}
+	return nil
 }

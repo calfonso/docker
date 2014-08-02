@@ -101,7 +101,7 @@ opterr = 0;
 		case 't':
 			console = optarg;
 			break;
-                } 
+                }
 	}
 
         if (strcmp(argv[optind - 2], "nsenter") != 0) {

@@ -35,37 +35,37 @@ func SysInit() {
 
 	var (
 		// Get cmdline arguments
-		user       = flag.String("u", "", "username or uid")
-		gateway    = flag.String("g", "", "gateway address")
-		ip         = flag.String("i", "", "ip address")
-		workDir    = flag.String("w", "", "workdir")
-		privileged = flag.Bool("privileged", false, "privileged mode")
-		mtu        = flag.Int("mtu", 1500, "interface mtu")
-		driver     = flag.String("driver", "", "exec driver")
-		pipe       = flag.Int("pipe", 0, "sync pipe fd")
-		console    = flag.String("console", "", "console (pty slave) path")
-		root       = flag.String("root", ".", "root path for configuration files")
-		capAdd     = flag.String("cap-add", "", "capabilities to add")
-		capDrop    = flag.String("cap-drop", "", "capabilities to drop")
+		user          = flag.String("u", "", "username or uid")
+		gateway       = flag.String("g", "", "gateway address")
+		ip            = flag.String("i", "", "ip address")
+		workDir       = flag.String("w", "", "workdir")
+		privileged    = flag.Bool("privileged", false, "privileged mode")
+		mtu           = flag.Int("mtu", 1500, "interface mtu")
+		driver        = flag.String("driver", "", "exec driver")
+		pipe          = flag.Int("pipe", 0, "sync pipe fd")
+		console       = flag.String("console", "", "console (pty slave) path")
+		root          = flag.String("root", ".", "root path for configuration files")
+		capAdd        = flag.String("cap-add", "", "capabilities to add")
+		capDrop       = flag.String("cap-drop", "", "capabilities to drop")
 		containerJson = flag.String("containerjson", "", "container config json string")
-		_ = flag.String("nspid", "" , "namespace init pid")
+		_             = flag.String("nspid", "", "namespace init pid")
 	)
 	flag.Parse()
 
 	args := &execdriver.InitArgs{
-		User:       *user,
-		Gateway:    *gateway,
-		Ip:         *ip,
-		WorkDir:    *workDir,
-		Privileged: *privileged,
-		Args:       flag.Args(),
-		Mtu:        *mtu,
-		Driver:     *driver,
-		Console:    *console,
-		Pipe:       *pipe,
-		Root:       *root,
-		CapAdd:     *capAdd,
-		CapDrop:    *capDrop,
+		User:          *user,
+		Gateway:       *gateway,
+		Ip:            *ip,
+		WorkDir:       *workDir,
+		Privileged:    *privileged,
+		Args:          flag.Args(),
+		Mtu:           *mtu,
+		Driver:        *driver,
+		Console:       *console,
+		Pipe:          *pipe,
+		Root:          *root,
+		CapAdd:        *capAdd,
+		CapDrop:       *capDrop,
 		ContainerJson: *containerJson,
 	}
 

@@ -1,17 +1,22 @@
 package daemon
 
 import (
+	"fmt"
 	"io"
+	"io/ioutil"
 
 	"github.com/docker/docker/daemon/execdriver"
 	"github.com/docker/docker/engine"
 	"github.com/docker/docker/runconfig"
+	"github.com/docker/docker/utils"
+	"github.com/docker/docker/utils/broadcastwriter"
 )
 
-func (daemon *Daemon) ContainerRunIn(job *engine.Job) engine.Status {
-	if len(job.Args) < 2 {
+func (d *Daemon) ContainerRunIn(job *engine.Job) engine.Status {
+	if len(job.Args) != 1 {
 		return job.Errorf("Usage: %s container_id command", job.Name)
 	}
+
 	var (
 		cStdin           io.ReadCloser
 		cStdout, cStderr io.Writer
@@ -19,9 +24,19 @@ func (daemon *Daemon) ContainerRunIn(job *engine.Job) engine.Status {
 		name             = job.Args[0]
 	)
 
-	runInConfig := runconfig.RunInConfigFromJob(job)
+	container := d.Get(name)
 
-	if runInConfig.Stdin {
+	if container == nil {
+		return job.Errorf("No such container: %s", name)
+	}
+
+	if !container.State.IsRunning() {
+		return job.Errorf("Container %s is not not running", name)
+	}
+
+	config := runconfig.RunInConfigFromJob(job)
+
+	if config.AttachStdin {
 		r, w := io.Pipe()
 		go func() {
 			defer w.Close()
@@ -30,39 +45,16 @@ func (daemon *Daemon) ContainerRunIn(job *engine.Job) engine.Status {
 		cStdin = r
 		cStdinCloser = job.Stdin
 	}
-	if runInConfig.Stdout {
+	if config.AttachStdout {
 		cStdout = job.Stdout
 	}
-	if runInConfig.Stderr {
+	if config.AttachStderr {
 		cStderr = job.Stderr
 	}
 
-	if err := daemon.RunInContainer(runInConfig, name, func(stdConfig *daemon.StdConfig) chan error {
-		return daemon.NewAttach(stdConfig, runInConfig.AttachStdin, false, runInConfig.Tty, cStdin, cStdinCloser, cStdout, cStderr)
-	}); err != nil {
-		return job.Error(err)
-	}
-	daemon.LogEvent("runin", name, "")
-	return engine.StatusOK
-}
+	entrypoint, args := d.getEntrypointAndArgs(nil, config.Cmd)
 
-func (daemon *Daemon) RunIn(c *Container, runInConfig *RunInConfig, pipes *execdriver.Pipes, startCallback execdriver.StartCallback) (int, error) {
-	return daemon.execDriver.RunIn(c.command, runInConfig.ProcessConfig, pipes, startCallback)
-}
-
-func (daemon *Daemon) RunInContainer(config *runconfig.RunInConfig, name string, attachCallback func(*StdConfig) chan error) error {
-	container := daemon.Get(name)
-	if container == nil {
-		return fmt.Errorf("No such container: %s", name)
-	}
-
-	if container.State.IsRunning() {
-		return fmt.Errorf("Container already started")
-	}
-
-	entrypoint, args := daemon.getEntrypointAndArgs(nil, config.Cmd)
-
-	processConfig := &execdriver.ProcessConfig{
+	processConfig := execdriver.ProcessConfig{
 		Privileged: config.Privileged,
 		User:       config.User,
 		Tty:        config.Tty,
@@ -72,7 +64,7 @@ func (daemon *Daemon) RunInContainer(config *runconfig.RunInConfig, name string,
 
 	runInConfig := &RunInConfig{
 		OpenStdin:     config.AttachStdin,
-		StdConfig:     &StdConfig{},
+		StdConfig:     StdConfig{},
 		ProcessConfig: processConfig,
 	}
 
@@ -84,18 +76,30 @@ func (daemon *Daemon) RunInContainer(config *runconfig.RunInConfig, name string,
 	} else {
 		runInConfig.StdConfig.stdinPipe = utils.NopWriteCloser(ioutil.Discard) // Silently drop stdin
 	}
-	var errChan chan error
-	go func() {
-		errChan = attachCallback(&runInConfig.StdConfig)
-		utils.Debugf("Run In callback done")
-	}()
-	utils.Debugf("About to run container RunIn with config %+v\n", runInConfig)
-	VishLog.Printf("About to run container RunIn with config %+v\n", runInConfig)
-	if err := container.RunIn(runInConfig); err != nil {
-		utils.Debugf("container Run In failed - %s\n", err)
-		return fmt.Errorf("Cannot run in container %s: %s", name, err)
-	}	
-	utils.Debugf("daemon.go RunIn completed.")
 
-	return <-errChan
+	var runInErr, attachErr chan error
+	go func() {
+		attachErr = d.Attach(&runInConfig.StdConfig, config.AttachStdin, false, config.Tty, cStdin, cStdinCloser, cStdout, cStderr)
+	}()
+
+	go func() {
+		err := container.RunIn(runInConfig)
+		if err != nil {
+			err = fmt.Errorf("Cannot run in container %s: %s", name, err)
+		}
+		runInErr <- err
+	}()
+
+	select {
+	case err := <-attachErr:
+		return job.Errorf("attach failed with error: %s", err)
+	case err := <-runInErr:
+		return job.Error(err)
+	}
+
+	return engine.StatusOK
+}
+
+func (daemon *Daemon) RunIn(c *Container, runInConfig *RunInConfig, pipes *execdriver.Pipes, startCallback execdriver.StartCallback) (int, error) {
+	return daemon.execDriver.RunIn(c.command, &runInConfig.ProcessConfig, pipes, startCallback)
 }

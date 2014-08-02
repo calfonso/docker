@@ -40,7 +40,7 @@ func (cli *DockerCli) HTTPClient() *http.Client {
 }
 
 func (cli *DockerCli) getUrlBody(data interface{}) (*bytes.Buffer, error) {
-	params := bytes.NewBuffer(nil)	
+	params := bytes.NewBuffer(nil)
 	if data != nil {
 		if env, ok := data.(engine.Env); ok {
 			if err := env.Encode(params); err != nil {
@@ -55,7 +55,7 @@ func (cli *DockerCli) getUrlBody(data interface{}) (*bytes.Buffer, error) {
 				return nil, err
 			}
 		}
-	}	
+	}
 	return params, nil
 }
 

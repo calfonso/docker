@@ -48,20 +48,20 @@ func GetInitFunc(name string) (InitFunc, error) {
 
 // Args provided to the init function for a driver
 type InitArgs struct {
-	User       string
-	Gateway    string
-	Ip         string
-	WorkDir    string
-	Privileged bool
-	Env        []string
-	Args       []string
-	Mtu        int
-	Driver     string
-	Console    string
-	Pipe       int
-	Root       string
-	CapAdd     string
-	CapDrop    string
+	User          string
+	Gateway       string
+	Ip            string
+	WorkDir       string
+	Privileged    bool
+	Env           []string
+	Args          []string
+	Mtu           int
+	Driver        string
+	Console       string
+	Pipe          int
+	Root          string
+	CapAdd        string
+	CapDrop       string
 	ContainerJson string
 }
 

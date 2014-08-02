@@ -10,7 +10,7 @@ type RunInConfig struct {
 	AttachStdin  bool
 	AttachStderr bool
 	AttachStdout bool
-	Detach bool
+	Detach       bool
 	Cmd          []string
 	Hostname     string
 }

@@ -1,6 +1,9 @@
 package runconfig
 
-import flag "github.com/docker/docker/pkg/mflag"
+import (
+	flag "github.com/docker/docker/pkg/mflag"
+	"github.com/docker/docker/utils"
+)
 
 func ParseRunIn(cmd *flag.FlagSet, args []string) (*RunInConfig, error) {
 	var (
@@ -17,6 +20,7 @@ func ParseRunIn(cmd *flag.FlagSet, args []string) (*RunInConfig, error) {
 		return nil, err
 	}
 	parsedArgs := cmd.Args()
+	utils.Debugf("runin parsedArgs: %+v\n", parsedArgs)
 	if len(parsedArgs) > 1 {
 		container = cmd.Arg(0)
 		runInCmd = parsedArgs[1:]
@@ -29,7 +33,7 @@ func ParseRunIn(cmd *flag.FlagSet, args []string) (*RunInConfig, error) {
 		Cmd:        runInCmd,
 		Container:  container,
 		Hostname:   *flHostname,
-		Detach: *flDetach,
+		Detach:     *flDetach,
 	}
 
 	// If -d is not set, attach to everything by default
