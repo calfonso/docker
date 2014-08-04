@@ -12,7 +12,7 @@ import (
 	"github.com/docker/docker/utils/broadcastwriter"
 )
 
-func (d *Daemon) ContainerRunIn(job *engine.Job) engine.Status {
+func (d *Daemon) ContainerExec(job *engine.Job) engine.Status {
 	if len(job.Args) != 1 {
 		return job.Errorf("Usage: %s container_id command", job.Name)
 	}
@@ -34,7 +34,7 @@ func (d *Daemon) ContainerRunIn(job *engine.Job) engine.Status {
 		return job.Errorf("Container %s is not not running", name)
 	}
 
-	config := runconfig.RunInConfigFromJob(job)
+	config := runconfig.ExecConfigFromJob(job)
 
 	if config.AttachStdin {
 		r, w := io.Pipe()
@@ -62,44 +62,44 @@ func (d *Daemon) ContainerRunIn(job *engine.Job) engine.Status {
 		Arguments:  args,
 	}
 
-	runInConfig := &RunInConfig{
+	execConfig := &ExecConfig{
 		OpenStdin:     config.AttachStdin,
 		StdConfig:     StdConfig{},
 		ProcessConfig: processConfig,
 	}
 
-	runInConfig.StdConfig.stderr = broadcastwriter.New()
-	runInConfig.StdConfig.stdout = broadcastwriter.New()
+	execConfig.StdConfig.stderr = broadcastwriter.New()
+	execConfig.StdConfig.stdout = broadcastwriter.New()
 	// Attach to stdin
-	if runInConfig.OpenStdin {
-		runInConfig.StdConfig.stdin, runInConfig.StdConfig.stdinPipe = io.Pipe()
+	if execConfig.OpenStdin {
+		execConfig.StdConfig.stdin, execConfig.StdConfig.stdinPipe = io.Pipe()
 	} else {
-		runInConfig.StdConfig.stdinPipe = utils.NopWriteCloser(ioutil.Discard) // Silently drop stdin
+		execConfig.StdConfig.stdinPipe = utils.NopWriteCloser(ioutil.Discard) // Silently drop stdin
 	}
 
-	var runInErr, attachErr chan error
+	var execErr, attachErr chan error
 	go func() {
-		attachErr = d.Attach(&runInConfig.StdConfig, config.AttachStdin, false, config.Tty, cStdin, cStdinCloser, cStdout, cStderr)
+		attachErr = d.Attach(&execConfig.StdConfig, config.AttachStdin, false, config.Tty, cStdin, cStdinCloser, cStdout, cStderr)
 	}()
 
 	go func() {
-		err := container.RunIn(runInConfig)
+		err := container.Exec(execConfig)
 		if err != nil {
 			err = fmt.Errorf("Cannot run in container %s: %s", name, err)
 		}
-		runInErr <- err
+		execErr <- err
 	}()
 
 	select {
 	case err := <-attachErr:
 		return job.Errorf("attach failed with error: %s", err)
-	case err := <-runInErr:
+	case err := <-execErr:
 		return job.Error(err)
 	}
 
 	return engine.StatusOK
 }
 
-func (daemon *Daemon) RunIn(c *Container, runInConfig *RunInConfig, pipes *execdriver.Pipes, startCallback execdriver.StartCallback) (int, error) {
-	return daemon.execDriver.RunIn(c.command, &runInConfig.ProcessConfig, pipes, startCallback)
+func (daemon *Daemon) Exec(c *Container, execConfig *ExecConfig, pipes *execdriver.Pipes, startCallback execdriver.StartCallback) (int, error) {
+	return daemon.execDriver.Exec(c.command, &execConfig.ProcessConfig, pipes, startCallback)
 }

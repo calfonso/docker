@@ -1141,7 +1141,7 @@ func createRouter(eng *engine.Engine, logging, enableCors bool, dockerVersion st
 			"/containers/{name:.*}/resize":  postContainersResize,
 			"/containers/{name:.*}/attach":  postContainersAttach,
 			"/containers/{name:.*}/copy":    postContainersCopy,
-			"/containers/{name:.*}/runin":   postContainersRunIn,
+			"/containers/{name:.*}/exec":    postContainersExec,
 		},
 		"DELETE": {
 			"/containers/{name:.*}": deleteContainers,
@@ -1385,13 +1385,13 @@ func AcceptConnections(job *engine.Job) engine.Status {
 	return engine.StatusOK
 }
 
-func postContainersRunIn(eng *engine.Engine, version version.Version, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
+func postContainersExec(eng *engine.Engine, version version.Version, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
 	if err := parseForm(r); err != nil {
 		return nil
 	}
 	var (
 		name = vars["name"]
-		job  = eng.Job("runin", name)
+		job  = eng.Job("exec", name)
 	)
 	if err := job.DecodeEnv(r.Body); err != nil {
 		return err

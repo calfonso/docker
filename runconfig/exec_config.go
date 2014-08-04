@@ -2,7 +2,7 @@ package runconfig
 
 import "github.com/docker/docker/engine"
 
-type RunInConfig struct {
+type ExecConfig struct {
 	User         string
 	Privileged   bool
 	Tty          bool
@@ -15,8 +15,8 @@ type RunInConfig struct {
 	Hostname     string
 }
 
-func RunInConfigFromJob(job *engine.Job) *RunInConfig {
-	runInConfig := &RunInConfig{
+func ExecConfigFromJob(job *engine.Job) *ExecConfig {
+	execConfig := &ExecConfig{
 		User:         job.Getenv("User"),
 		Privileged:   job.GetenvBool("Privileged"),
 		Tty:          job.GetenvBool("Tty"),
@@ -26,8 +26,8 @@ func RunInConfigFromJob(job *engine.Job) *RunInConfig {
 		AttachStdout: job.GetenvBool("AttachStdout"),
 	}
 	if Cmd := job.GetenvList("Cmd"); Cmd != nil {
-		runInConfig.Cmd = Cmd
+		execConfig.Cmd = Cmd
 	}
 
-	return runInConfig
+	return execConfig
 }

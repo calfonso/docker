@@ -127,7 +127,7 @@ func (daemon *Daemon) Install(eng *engine.Engine) error {
 		"top":               daemon.ContainerTop,
 		"unpause":           daemon.ContainerUnpause,
 		"wait":              daemon.ContainerWait,
-		"runin":             daemon.ContainerRunIn,
+		"exec":              daemon.ContainerExec,
 	} {
 		if err := eng.Register(name, method); err != nil {
 			return err

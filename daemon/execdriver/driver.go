@@ -84,15 +84,21 @@ type TtyTerminal interface {
 }
 
 type Driver interface {
-	Run(c *Command, pipes *Pipes, startCallback StartCallback) (int, error)                                 // Run executes the process and blocks until the process exits and returns the exit code
-	RunIn(c *Command, processConfig *ProcessConfig, pipes *Pipes, startCallback StartCallback) (int, error) // RunIn executes the process in an existing container, blocks until the process exits and returns the exit code
+	// Run executes the process and blocks until the process exits and returns the exit code
+	Run(c *Command, pipes *Pipes, startCallback StartCallback) (int, error)
+	// Exec executes the process in an existing container, blocks until the process exits and returns the exit code
+	Exec(c *Command, processConfig *ProcessConfig, pipes *Pipes, startCallback StartCallback) (int, error)
 	Kill(c *Command, sig int) error
 	Pause(c *Command) error
 	Unpause(c *Command) error
-	Name() string                                 // Driver name
-	Info(id string) Info                          // "temporary" hack (until we move state from core to plugins)
-	GetPidsForContainer(id string) ([]int, error) // Returns a list of pids for the given container.
-	Terminate(c *Command) error                   // kill it with fire
+	// Driver name
+	Name() string
+	// "temporary" hack (until we move state from core to plugins)
+	Info(id string) Info
+	// Returns a list of pids for the given container.
+	GetPidsForContainer(id string) ([]int, error)
+	// kill it with fire
+	Terminate(c *Command) error
 }
 
 // Network settings of the container

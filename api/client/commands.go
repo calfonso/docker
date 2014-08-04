@@ -80,7 +80,7 @@ func (cli *DockerCli) CmdHelp(args ...string) error {
 		{"rm", "Remove one or more containers"},
 		{"rmi", "Remove one or more images"},
 		{"run", "Run a command in a new container"},
-		{"runin", "Run a command in an existing container"},
+		{"exec", "Run a command in an existing container"},
 		{"save", "Save an image to a tar archive"},
 		{"search", "Search for an image on the Docker Hub"},
 		{"start", "Start a stopped container"},
@@ -1973,20 +1973,20 @@ func (cli *DockerCli) pullImage(image string) error {
 	}
 	return nil
 }
-func (cli *DockerCli) CmdRunin(args ...string) error {
-	cmd := cli.Subcmd("runin", "[OPTIONS] CONTAINER COMMAND [ARG...]", "Run a command in an existing container")
+func (cli *DockerCli) CmdExec(args ...string) error {
+	cmd := cli.Subcmd("exec", "[OPTIONS] CONTAINER COMMAND [ARG...]", "Run a command in an existing container")
 
-	runInConfig, err := runconfig.ParseRunIn(cmd, args)
+	execConfig, err := runconfig.ParseExec(cmd, args)
 	if err != nil {
 		return err
 	}
-	if runInConfig.Container == "" {
+	if execConfig.Container == "" {
 		cmd.Usage()
 		return nil
 	}
 
-	if runInConfig.Detach {
-		_, _, err := cli.call("POST", "/containers/"+runInConfig.Container+"/runin", runInConfig, false)
+	if execConfig.Detach {
+		_, _, err := cli.call("POST", "/containers/"+execConfig.Container+"/exec", execConfig, false)
 		return err
 	}
 	var (
@@ -1999,27 +1999,27 @@ func (cli *DockerCli) CmdRunin(args ...string) error {
 	)
 	// Block the return until the chan gets closed
 	defer func() {
-		utils.Debugf("End of CmdRunIn(), Waiting for hijack to finish.")
+		utils.Debugf("End of CmdExec(), Waiting for hijack to finish.")
 		if _, ok := <-hijacked; ok {
 			utils.Errorf("Hijack did not finish (chan still open)")
 		}
 	}()
 
-	if runInConfig.AttachStdin {
+	if execConfig.AttachStdin {
 		in = cli.in
 	}
-	if runInConfig.AttachStdout {
+	if execConfig.AttachStdout {
 		out = cli.out
 	}
-	if runInConfig.AttachStderr {
-		if runInConfig.Tty {
+	if execConfig.AttachStderr {
+		if execConfig.Tty {
 			stderr = cli.out
 		} else {
 			stderr = cli.err
 		}
 	}
 	errCh = utils.Go(func() error {
-		return cli.hijack("POST", "/containers/"+runInConfig.Container+"/runin?", runInConfig.Tty, in, out, stderr, hijacked, runInConfig)
+		return cli.hijack("POST", "/containers/"+execConfig.Container+"/exec?", execConfig.Tty, in, out, stderr, hijacked, execConfig)
 	})
 
 	// Acknowledge the hijack before starting

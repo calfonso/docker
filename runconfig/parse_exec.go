@@ -1,11 +1,8 @@
 package runconfig
 
-import (
-	flag "github.com/docker/docker/pkg/mflag"
-	"github.com/docker/docker/utils"
-)
+import flag "github.com/docker/docker/pkg/mflag"
 
-func ParseRunIn(cmd *flag.FlagSet, args []string) (*RunInConfig, error) {
+func ParseExec(cmd *flag.FlagSet, args []string) (*ExecConfig, error) {
 	var (
 		flPrivileged = cmd.Bool([]string{"#privileged", "-privileged"}, false, "Give extended privileges to this container")
 		flStdin      = cmd.Bool([]string{"i", "-interactive"}, false, "Keep STDIN open even if not attached")
@@ -13,24 +10,23 @@ func ParseRunIn(cmd *flag.FlagSet, args []string) (*RunInConfig, error) {
 		flHostname   = cmd.String([]string{"h", "-hostname"}, "", "Container host name")
 		flUser       = cmd.String([]string{"u", "-user"}, "", "Username or UID")
 		flDetach     = cmd.Bool([]string{"d", "-detach"}, false, "Detached mode: run command in the background")
-		runInCmd     []string
+		execCmd      []string
 		container    string
 	)
 	if err := cmd.Parse(args); err != nil {
 		return nil, err
 	}
 	parsedArgs := cmd.Args()
-	utils.Debugf("runin parsedArgs: %+v\n", parsedArgs)
 	if len(parsedArgs) > 1 {
 		container = cmd.Arg(0)
-		runInCmd = parsedArgs[1:]
+		execCmd = parsedArgs[1:]
 	}
 
-	runInConfig := &RunInConfig{
+	execConfig := &ExecConfig{
 		User:       *flUser,
 		Privileged: *flPrivileged,
 		Tty:        *flTty,
-		Cmd:        runInCmd,
+		Cmd:        execCmd,
 		Container:  container,
 		Hostname:   *flHostname,
 		Detach:     *flDetach,
@@ -38,12 +34,12 @@ func ParseRunIn(cmd *flag.FlagSet, args []string) (*RunInConfig, error) {
 
 	// If -d is not set, attach to everything by default
 	if !*flDetach {
-		runInConfig.AttachStdout = true
-		runInConfig.AttachStderr = true
+		execConfig.AttachStdout = true
+		execConfig.AttachStderr = true
 		if *flStdin {
-			runInConfig.AttachStdin = true
+			execConfig.AttachStdin = true
 		}
 	}
 
-	return runInConfig, nil
+	return execConfig, nil
 }

@@ -41,7 +41,7 @@ var (
 	ErrContainerStartTimeout = errors.New("The container failed to start due to timed out.")
 )
 
-type RunInConfig struct {
+type ExecConfig struct {
 	ProcessConfig execdriver.ProcessConfig
 	StdConfig     StdConfig
 	OpenStdin     bool
@@ -1220,7 +1220,7 @@ func (container *Container) getNetworkedContainer() (*Container, error) {
 	}
 }
 
-func (container *Container) RunIn(runInConfig *RunInConfig) error {
+func (container *Container) Exec(execConfig *ExecConfig) error {
 	container.Lock()
 	defer container.Unlock()
 
@@ -1240,9 +1240,9 @@ func (container *Container) RunIn(runInConfig *RunInConfig) error {
 
 	// We use a callback here instead of a goroutine and an chan for
 	// syncronization purposes
-	cErr := utils.Go(func() error { return container.monitorRunIn(runInConfig, callback) })
+	cErr := utils.Go(func() error { return container.monitorExec(execConfig, callback) })
 
-	// RunIn should not return until the process is actually running
+	// Exec should not return until the process is actually running
 	select {
 	case <-waitStart:
 	case err := <-cErr:
@@ -1252,32 +1252,32 @@ func (container *Container) RunIn(runInConfig *RunInConfig) error {
 	return nil
 }
 
-func (container *Container) monitorRunIn(runInConfig *RunInConfig, callback execdriver.StartCallback) error {
+func (container *Container) monitorExec(execConfig *ExecConfig, callback execdriver.StartCallback) error {
 	var (
 		err      error
 		exitCode int
 	)
 
-	pipes := execdriver.NewPipes(runInConfig.StdConfig.stdin, runInConfig.StdConfig.stdout, runInConfig.StdConfig.stderr, runInConfig.OpenStdin)
-	exitCode, err = container.daemon.RunIn(container, runInConfig, pipes, callback)
+	pipes := execdriver.NewPipes(execConfig.StdConfig.stdin, execConfig.StdConfig.stdout, execConfig.StdConfig.stderr, execConfig.OpenStdin)
+	exitCode, err = container.daemon.Exec(container, execConfig, pipes, callback)
 	if err != nil {
 		utils.Errorf("Error running command in existing container %s: %s", container.ID, err)
 	}
 
-	utils.Debugf("RunIn task in container %s exited with code %d", container.ID, exitCode)
-	if runInConfig.OpenStdin {
-		if err := runInConfig.StdConfig.stdin.Close(); err != nil {
+	utils.Debugf("Exec task in container %s exited with code %d", container.ID, exitCode)
+	if execConfig.OpenStdin {
+		if err := execConfig.StdConfig.stdin.Close(); err != nil {
 			utils.Errorf("Error closing stdin while running in %s: %s", container.ID, err)
 		}
 	}
-	if err := runInConfig.StdConfig.stdout.Clean(); err != nil {
+	if err := execConfig.StdConfig.stdout.Clean(); err != nil {
 		utils.Errorf("Error closing stdout while running in %s: %s", container.ID, err)
 	}
-	if err := runInConfig.StdConfig.stderr.Clean(); err != nil {
+	if err := execConfig.StdConfig.stderr.Clean(); err != nil {
 		utils.Errorf("Error closing stderr while running in %s: %s", container.ID, err)
 	}
-	if runInConfig.ProcessConfig.Terminal != nil {
-		if err := runInConfig.ProcessConfig.Terminal.Close(); err != nil {
+	if execConfig.ProcessConfig.Terminal != nil {
+		if err := execConfig.ProcessConfig.Terminal.Close(); err != nil {
 			utils.Errorf("Error closing terminal while running in container %s: %s", container.ID, err)
 		}
 	}
