@@ -91,6 +91,8 @@ type Driver interface {
 	Kill(c *Command, sig int) error
 	Pause(c *Command) error
 	Unpause(c *Command) error
+	ModifyDeviceAdd(c *Command, device *devices.Device) error
+	ModifyDeviceRemove(c *Command, device *devices.Device) error
 	// Driver name
 	Name() string
 	// "temporary" hack (until we move state from core to plugins)

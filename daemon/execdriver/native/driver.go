@@ -22,6 +22,7 @@ import (
 	"github.com/docker/libcontainer/cgroups/fs"
 	"github.com/docker/libcontainer/cgroups/systemd"
 	consolepkg "github.com/docker/libcontainer/console"
+	"github.com/docker/libcontainer/devices"
 	"github.com/docker/libcontainer/namespaces"
 	"github.com/docker/libcontainer/syncpipe"
 	"github.com/docker/libcontainer/system"
@@ -35,14 +36,31 @@ const (
 func init() {
 	execdriver.RegisterInitFunc(DriverName, func(args *execdriver.InitArgs) error {
 		var container *libcontainer.Config
+		log := fmt.Sprintf("------> Ran docker, args are %v\n", args.Args)
+		f, _ := os.Create("/tmp/docker-init.txt")
+		f.WriteString(log)
+
 		if args.Args[0] == "nsenter" {
-			if err := json.Unmarshal([]byte(args.ContainerJson), &container); err != nil {
-				return fmt.Errorf("failed to unmarshall -containerjson: %s - %s", args.ContainerJson, err)
+			if args.Args[1] == "exec" {
+				if err := json.Unmarshal([]byte(args.ContainerJson), &container); err != nil {
+					return fmt.Errorf("failed to unmarshall -containerjson: %s - %s", args.ContainerJson, err)
+				}
+				return namespaces.NsEnter(container, args.Args[3:])
+			} else if args.Args[1] == "mknod" {
+				path := args.Args[3]
+				mode, _ := strconv.ParseUint(args.Args[4], 10, 32)
+				dev, _ := strconv.Atoi(args.Args[5])
+				msg := fmt.Sprintf("Would call Mknod(%s, %o, %x)\n", path, mode, dev)
+				f.WriteString(msg)
+				err := syscall.Mknod(path, uint32(mode), dev)
+				f.WriteString(fmt.Sprintf("Error: %s\n", err))
+				return err
+			} else if args.Args[1] == "unlink" {
+				path := args.Args[3]
+				fmt.Print("Would call Unlink(%s)\n", path)
+				return syscall.Unlink(path)
 			}
-
-			return namespaces.NsEnter(container, args.Args[2:])
 		}
-
 		f, err := os.Open(filepath.Join(args.Root, "container.json"))
 		if err != nil {
 			return err
@@ -195,6 +213,136 @@ func (d *driver) Unpause(c *execdriver.Command) error {
 		return systemd.Freeze(active.container.Cgroups, active.container.Cgroups.Freezer)
 	}
 	return fs.Freeze(active.container.Cgroups, active.container.Cgroups.Freezer)
+}
+
+func (d *driver) ModifyDeviceAdd(c *execdriver.Command, device *devices.Device) error {
+
+	active := d.activeContainers[c.ID]
+	if active == nil {
+		return fmt.Errorf("active container for %s does not exist", c.ID)
+	}
+
+	fmt.Printf("-----> Modify device add, device: %s\n", device.Path)
+
+	// Update allowed devices in cgroups
+	active.container.Cgroups.AllowedDevices = append(active.container.Cgroups.AllowedDevices, device)
+
+	// Apply changes to live container.
+	if systemd.UseSystemd() {
+		if err := systemd.UpdateAllowedDevices(active.container.Cgroups, c.ProcessConfig.ContainerPid); err != nil {
+			return err
+		}
+	} else {
+		if _, err := fs.Apply(active.container.Cgroups, c.ProcessConfig.ContainerPid); err != nil {
+			return err
+		}
+	}
+	fmt.Printf("-----> Cgroups modified, adding device node\n")
+
+	processConfig := execdriver.ProcessConfig{
+		Privileged: true,
+		User:       c.ProcessConfig.User,
+		Tty:        false,
+		Entrypoint: "",
+		Arguments:  nil,
+	}
+	processConfig.Path = d.initPath
+	fmt.Printf("processconfig path is %s\n", processConfig.Path)
+
+	fmt.Printf("entry point from container is: %s\n", c.ProcessConfig.Entrypoint)
+
+	deviceNumber := devices.Mkdev(device.MajorNumber, device.MinorNumber)
+	args := []string{device.Path, strconv.FormatUint(uint64(device.FileMode), 10), strconv.Itoa(deviceNumber)}
+	nsenterCmd, err := namespaces.GetNsEnterCommand(strconv.Itoa(c.ProcessConfig.ContainerPid), active.container, "", "mknod", args)
+	if err != nil {
+		fmt.Errorf("Failed to get nsenter command - %s", err)
+		return err
+	}
+
+	processConfig.Args = append([]string{
+		c.InitPath,
+		"--driver", DriverName}, nsenterCmd...)
+
+	fmt.Printf("-----> Calling start, args are %v\n", processConfig.Args)
+	if err := processConfig.Start(); err != nil {
+		fmt.Printf("-----> err is %s\n", err)
+		return err
+	}
+	fmt.Printf("-----> start done\n")
+
+	if err := processConfig.Wait(); err != nil {
+		if _, ok := err.(*exec.ExitError); !ok {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (d *driver) ModifyDeviceRemove(c *execdriver.Command, device *devices.Device) error {
+	active := d.activeContainers[c.ID]
+	if active == nil {
+		return fmt.Errorf("active container for %s does not exist", c.ID)
+	}
+
+	// Update allowed devices in cgroups
+	active.container.Cgroups.AllowedDevices = append(active.container.Cgroups.AllowedDevices, device)
+	new_devices := []*devices.Device{}
+	for i := 0; i < len(active.container.Cgroups.AllowedDevices); i++ {
+		if active.container.Cgroups.AllowedDevices[i].Path != device.Path {
+			new_devices = append(new_devices, active.container.Cgroups.AllowedDevices[i])
+		}
+	}
+	active.container.Cgroups.AllowedDevices = new_devices
+
+	// Apply changes to live container.
+	if systemd.UseSystemd() {
+		if err := systemd.UpdateAllowedDevices(active.container.Cgroups, c.ProcessConfig.ContainerPid); err != nil {
+			return err
+		}
+	} else {
+		if _, err := fs.Apply(active.container.Cgroups, c.ProcessConfig.ContainerPid); err != nil {
+			return err
+		}
+	}
+
+	processConfig := execdriver.ProcessConfig{
+		Privileged: true,
+		User:       c.ProcessConfig.User,
+		Tty:        false,
+		Entrypoint: "",
+		Arguments:  nil,
+	}
+	processConfig.Path = d.initPath
+	fmt.Printf("processconfig path is %s\n", processConfig.Path)
+
+	fmt.Printf("entry point from container is: %s\n", c.ProcessConfig.Entrypoint)
+
+	args := []string{device.Path}
+	nsenterCmd, err := namespaces.GetNsEnterCommand(strconv.Itoa(c.ProcessConfig.ContainerPid), active.container, "", "unlink", args)
+	if err != nil {
+		fmt.Errorf("Failed to get nsenter command - %s", err)
+		return err
+	}
+
+	processConfig.Args = append([]string{
+		c.InitPath,
+		"--driver", DriverName}, nsenterCmd...)
+
+	fmt.Printf("-----> Calling start, args are %v\n", processConfig.Args)
+	if err := processConfig.Start(); err != nil {
+		fmt.Printf("-----> err is %s\n", err)
+		return err
+	}
+	fmt.Printf("-----> start done\n")
+
+	if err := processConfig.Wait(); err != nil {
+		if _, ok := err.(*exec.ExitError); !ok {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (d *driver) Terminate(p *execdriver.Command) error {
@@ -372,7 +520,7 @@ func (d *driver) Exec(c *execdriver.Command, processConfig *execdriver.ProcessCo
 
 	processConfig.Path = d.initPath
 
-	nsenterCmd, err := namespaces.GetNsEnterCommand(strconv.Itoa(state.InitPid), active.container, processConfig.Console, args)
+	nsenterCmd, err := namespaces.GetNsEnterCommand(strconv.Itoa(state.InitPid), active.container, processConfig.Console, "exec", args)
 	if err != nil {
 		return -1, fmt.Errorf("failed to get nsenter command - %s", err)
 	}
@@ -381,6 +529,7 @@ func (d *driver) Exec(c *execdriver.Command, processConfig *execdriver.ProcessCo
 		c.InitPath,
 		"--driver", DriverName}, nsenterCmd...)
 
+	fmt.Printf("process config args: %v, args: %v\n", processConfig.Args, nsenterCmd)
 	processConfig.Dir = "/"
 
 	if err := processConfig.Start(); err != nil {

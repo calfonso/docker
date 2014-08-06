@@ -20,6 +20,7 @@ import (
 	"github.com/docker/docker/pkg/term"
 	"github.com/docker/docker/utils"
 	"github.com/docker/libcontainer/cgroups"
+	"github.com/docker/libcontainer/devices"
 	"github.com/docker/libcontainer/label"
 	"github.com/docker/libcontainer/mount/nodes"
 	"github.com/kr/pty"
@@ -254,6 +255,52 @@ func (d *driver) Unpause(c *execdriver.Command) error {
 	}
 
 	return err
+}
+
+func (d *driver) ModifyDeviceAdd(c *execdriver.Command, device *devices.Device) error {
+
+	if _, err := exec.LookPath("lxc-cgroup"); err != nil {
+		return fmt.Errorf("Err: Cannot find lxc-cgroup: %s", err)
+	}
+
+	// Update lxc cgroups to allow this device.
+	output, err := exec.Command("lxc-cgroup", "-n", c.ID, "devices.allow", device.GetCgroupAllowString()).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("Err: %s Output: %s", err, output)
+	}
+
+	// You could do this with lxc-attach but then you have to run the mknod command in the container.
+	// This is a better solution as it does not require anything special in the container.
+	// Set up the filename for mount namespace.
+	ns_file := fmt.Sprintf("/proc/%d/ns/mnt", c.ProcessConfig.ContainerPid)
+	fmt.Printf("ns_file: %s\n", ns_file)
+	// Create the device node in the container.
+	//namespaces.NsEnterMknod(ns_file, dst, uint64(device.FileMode), uint(device.MajorNumber), uint(device.MinorNumber))
+
+	return nil
+}
+
+func (d *driver) ModifyDeviceRemove(c *execdriver.Command, device *devices.Device) error {
+
+	if _, err := exec.LookPath("lxc-cgroup"); err != nil {
+		return fmt.Errorf("Err: Cannot find lxc-cgroup: %s", err)
+	}
+
+	// Update lxc cgroups to allow this device.
+	output, err := exec.Command("lxc-cgroup", "-n", c.ID, "devices.deny", device.GetCgroupAllowString()).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("Err: %s Output: %s", err, output)
+	}
+
+	// You could do this with lxc-attach but then you have to run the mknod command in the container.
+	// This is a better solution as it does not require anything special in the container.
+	// Set up the filename for mount namespace.
+	ns_file := fmt.Sprintf("/proc/%d/ns/mnt", c.ProcessConfig.ContainerPid)
+	// Remove the device node from the container.
+	// namespaces.NsEnterUnlink(ns_file, dst)
+	fmt.Printf("ns_file: %s\n", ns_file)
+
+	return nil
 }
 
 func (d *driver) Terminate(c *execdriver.Command) error {

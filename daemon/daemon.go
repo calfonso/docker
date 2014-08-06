@@ -36,6 +36,7 @@ import (
 	"github.com/docker/docker/runconfig"
 	"github.com/docker/docker/utils"
 	"github.com/docker/docker/utils/broadcastwriter"
+	"github.com/docker/libcontainer/devices"
 	"github.com/docker/libcontainer/label"
 )
 
@@ -119,6 +120,7 @@ func (daemon *Daemon) Install(eng *engine.Engine) error {
 		"export":            daemon.ContainerExport,
 		"kill":              daemon.ContainerKill,
 		"logs":              daemon.ContainerLogs,
+		"modify":            daemon.ContainerModify,
 		"pause":             daemon.ContainerPause,
 		"resize":            daemon.ContainerResize,
 		"restart":           daemon.ContainerRestart,
@@ -952,6 +954,60 @@ func (daemon *Daemon) Pause(c *Container) error {
 		return err
 	}
 	c.State.SetPaused()
+	return nil
+}
+
+func (daemon *Daemon) Modify(c *Container, action string, arguments string) error {
+	if action == "device-add" {
+		// Split on "," to support multiple values
+		values := strings.Split(arguments, ",")
+
+		for value := range values {
+			devmap, err := runconfig.ParseDevice(values[value])
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("daemon.go Modify value is %v\n", values[value])
+			// Build a device from our info.
+			device, err := devices.GetDevice(devmap.PathOnHost, devmap.CgroupPermissions)
+			if err != nil {
+				return err
+			}
+			// Before calling DevAdd we want to set the path to the path
+			// This will be in the container.
+			device.Path = devmap.PathInContainer
+
+			if err := daemon.execDriver.ModifyDeviceAdd(c.command, device); err != nil {
+				return err
+			}
+		}
+		return nil
+	} else if action == "device-remove" {
+		// Split on "," to support multiple values
+		values := strings.Split(arguments, ",")
+
+		for value := range values {
+			devmap, err := runconfig.ParseDevice(values[value])
+			if err != nil {
+				return err
+			}
+
+			// Build a device from our info.
+			device, err := devices.GetDevice(devmap.PathOnHost, devmap.CgroupPermissions)
+			if err != nil {
+				return err
+			}
+			// Before calling DevAdd we want to set the path to the path
+			// This will be in the container.
+			device.Path = devmap.PathInContainer
+
+			if err := daemon.execDriver.ModifyDeviceRemove(c.command, device); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 

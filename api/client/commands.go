@@ -71,6 +71,7 @@ func (cli *DockerCli) CmdHelp(args ...string) error {
 		{"login", "Register or log in to a Docker registry server"},
 		{"logout", "Log out from a Docker registry server"},
 		{"logs", "Fetch the logs of a container"},
+		{"modify", "Modify the state of a running container"},
 		{"port", "Lookup the public-facing port that is NAT-ed to PRIVATE_PORT"},
 		{"pause", "Pause all processes within a container"},
 		{"ps", "List containers"},
@@ -1775,6 +1776,34 @@ func (cli *DockerCli) CmdLogs(args ...string) error {
 	v.Set("tail", *tail)
 
 	return cli.streamHelper("GET", "/containers/"+name+"/logs?"+v.Encode(), env.GetSubEnv("Config").GetBool("Tty"), nil, cli.out, cli.err, nil)
+}
+
+func (cli *DockerCli) CmdModify(args ...string) error {
+	cmd := cli.Subcmd("modify", "CONTAINER ACTION ARGUMENTS", "Modify the state of a running container")
+
+	if err := cmd.Parse(args); err != nil {
+		return nil
+	}
+	fmt.Printf("number of arguments is %v ", cmd.NArg())
+	if cmd.NArg() != 3 {
+		cmd.Usage()
+		return nil
+	}
+	name := cmd.Arg(0)
+	action := cmd.Arg(1)
+	arguments := cmd.Arg(2)
+
+	containerValues := url.Values{}
+	containerValues.Set("name", name)
+	containerValues.Set("action", action)
+	containerValues.Set("arguments", arguments)
+
+	_, _, err := cli.call("PUT", "/containers/"+name+"/modify?"+containerValues.Encode(), nil, false)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (cli *DockerCli) CmdAttach(args ...string) error {
