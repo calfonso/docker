@@ -196,6 +196,23 @@ func postContainersUnpause(eng *engine.Engine, version version.Version, w http.R
 	return nil
 }
 
+func putContainersModify(eng *engine.Engine, version version.Version, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
+	if vars == nil {
+		return fmt.Errorf("Missing parameter")
+	}
+	if err := parseForm(r); err != nil {
+		return err
+	}
+	job := eng.Job("modify", vars["name"], r.Form.Get("type"), r.Form.Get("values"))
+	job.Setenv("type", r.Form.Get("type"))
+	job.Setenv("values", r.Form.Get("values"))
+	if err := job.Run(); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
 func getContainersExport(eng *engine.Engine, version version.Version, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
 	if vars == nil {
 		return fmt.Errorf("Missing parameter")
@@ -1147,6 +1164,9 @@ func createRouter(eng *engine.Engine, logging, enableCors bool, dockerVersion st
 		"DELETE": {
 			"/containers/{name:.*}": deleteContainers,
 			"/images/{name:.*}":     deleteImages,
+		},
+		"PUT": {
+			"/containers/{name:.*}/modify": putContainersModify,
 		},
 		"OPTIONS": {
 			"": optionsHandler,

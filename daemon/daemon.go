@@ -119,6 +119,7 @@ func (daemon *Daemon) Install(eng *engine.Engine) error {
 		"export":            daemon.ContainerExport,
 		"kill":              daemon.ContainerKill,
 		"logs":              daemon.ContainerLogs,
+		"modify":            daemon.ContainerModify,
 		"pause":             daemon.ContainerPause,
 		"resize":            daemon.ContainerResize,
 		"restart":           daemon.ContainerRestart,
@@ -945,6 +946,16 @@ func (daemon *Daemon) Pause(c *Container) error {
 		return err
 	}
 	c.State.SetPaused()
+	return nil
+}
+
+func (daemon *Daemon) Modify(c *Container, modifytype string, modifyvalues string) error {
+	if modifytype == "device" {
+		// Split on "," to support multiple values
+		values := strings.Split(modifyvalues, ",")
+		fmt.Printf("daemon.go Modify values are %v", values)
+		// Call daemon.execDriver.Dev[Action]
+	}
 	return nil
 }
 
